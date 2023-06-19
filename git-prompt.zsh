@@ -34,12 +34,20 @@ autoload -U colors && colors
 : "${ZSH_THEME_GIT_PROMPT_SUFFIX="] "}"
 : "${ZSH_THEME_GIT_PROMPT_SEPARATOR="|"}"
 : "${ZSH_THEME_GIT_PROMPT_DETACHED="%{$fg_bold[cyan]%}:"}"
+: "${ZSH_THEME_GIT_PROMPT_DETACHED_PREFIX="%{$fg_bold[red]%}("}"
+: "${ZSH_THEME_GIT_PROMPT_DETACHED_SUFFIX="%{$fg_bold[red]%})"}"
 : "${ZSH_THEME_GIT_PROMPT_BRANCH="%{$fg_bold[magenta]%}"}"
+: "${ZSH_THEME_GIT_PROMPT_BRANCH_PREFIX="%{$fg[red]%}("}"
+: "${ZSH_THEME_GIT_PROMPT_BRANCH_SUFFIX="%{$fg[red]%})"}"
+: "${ZSH_THEME_GIT_PROMPT_UPSTREAM="%{$fg_bold[yellow]%}"}"
 : "${ZSH_THEME_GIT_PROMPT_UPSTREAM_SYMBOL="%{$fg_bold[yellow]%}⟳ "}"
 : "${ZSH_THEME_GIT_PROMPT_UPSTREAM_NO_TRACKING=""}"
-: "${ZSH_THEME_GIT_PROMPT_UPSTREAM_PREFIX="%{$fg[red]%}(%{$fg[yellow]%}"}"
+: "${ZSH_THEME_GIT_PROMPT_UPSTREAM_PREFIX="%{$fg[red]%}("}"
 : "${ZSH_THEME_GIT_PROMPT_UPSTREAM_SUFFIX="%{$fg[red]%})"}"
 : "${ZSH_THEME_GIT_PROMPT_BEHIND="↓"}"
+: "${ZSH_THEME_GIT_PROMPT_ACTION="%{$fg[red]%}"}"
+: "${ZSH_THEME_GIT_PROMPT_ACTION_PREFIX="%{$fg[red]%}("}"
+: "${ZSH_THEME_GIT_PROMPT_ACTION_SUFFIX="%{$fg[red]%})"}"
 : "${ZSH_THEME_GIT_PROMPT_AHEAD="↑"}"
 : "${ZSH_THEME_GIT_PROMPT_UNMERGED="%{$fg[red]%}✖"}"
 : "${ZSH_THEME_GIT_PROMPT_STAGED="%{$fg[green]%}●"}"
@@ -57,14 +65,6 @@ autoload -U colors && colors
 # Disable promptinit if it is loaded
 (( $+functions[promptinit] )) && {promptinit; prompt off}
 
-# Allow parameter and command substitution in the prompt
-setopt PROMPT_SUBST
-
-# Override PROMPT if it does not use the gitprompt function
-[[ "$PROMPT" != *gitprompt* && "$RPROMPT" != *gitprompt* ]] \
-    && PROMPT='%B%40<..<%~ %b$(gitprompt)' \
-    && PROMPT+='%(?.%(!.%F{white}❯%F{yellow}❯%F{red}.%F{blue}❯%F{cyan}❯%F{green})❯.%F{red}❯❯❯)%f '
-
 # Find an awk implementation
 # Prefer nawk over mawk and mawk over awk
 (( $+commands[mawk] ))  &&  : "${ZSH_GIT_PROMPT_AWK_CMD:=mawk}"
@@ -73,7 +73,22 @@ setopt PROMPT_SUBST
 
 function _zsh_git_prompt_git_status() {
     emulate -L zsh
-    {
+    ( git rev-parse --is-inside-work-tree &> /dev/null ) && {
+        # Erase
+        local dir="$(git --no-optional-locks rev-parse --absolute-git-dir 2>/dev/null)"
+
+        ( test -f "$dir/MERGE_HEAD" ) && {
+            echo "# git.action merge"
+        }
+
+        ( test -f "$dir/CHERRY_PICK_HEAD" ) && {
+            echo "# git.action cherry-pick"
+        }
+
+        ( test -d "$dir/rebase-merge" || test -d "$dir/rebase-apply" ) && {
+            echo "# git.action rebase"
+        }
+
         [[ -n "$ZSH_GIT_PROMPT_SHOW_STASH" ]] && (
             c=$(command git rev-list --walk-reflogs --count refs/stash 2> /dev/null)
             [[ -n "$c" ]] && echo "# stash.count $c"
@@ -85,7 +100,12 @@ function _zsh_git_prompt_git_status() {
         -v SUFFIX="$ZSH_THEME_GIT_PROMPT_SUFFIX" \
         -v SEPARATOR="$ZSH_THEME_GIT_PROMPT_SEPARATOR" \
         -v DETACHED="$ZSH_THEME_GIT_PROMPT_DETACHED" \
+        -v DETACHED_PREFIX="$ZSH_THEME_GIT_PROMPT_DETACHED_PREFIX" \
+        -v DETACHED_SUFFIX="$ZSH_THEME_GIT_PROMPT_DETACHED_SUFFIX" \
         -v BRANCH="$ZSH_THEME_GIT_PROMPT_BRANCH" \
+        -v BRANCH_PREFIX="$ZSH_THEME_GIT_PROMPT_BRANCH_PREFIX" \
+        -v BRANCH_SUFFIX="$ZSH_THEME_GIT_PROMPT_BRANCH_SUFFIX" \
+        -v UPSTREAM="$ZSH_THEME_GIT_PROMPT_UPSTREAM" \
         -v UPSTREAM_TYPE="$ZSH_GIT_PROMPT_SHOW_UPSTREAM" \
         -v UPSTREAM_SYMBOL="$ZSH_THEME_GIT_PROMPT_UPSTREAM_SYMBOL" \
         -v UPSTREAM_NO_TRACKING="$ZSH_THEME_GIT_PROMPT_UPSTREAM_NO_TRACKING" \
@@ -93,6 +113,9 @@ function _zsh_git_prompt_git_status() {
         -v UPSTREAM_SUFFIX="$ZSH_THEME_GIT_PROMPT_UPSTREAM_SUFFIX" \
         -v BEHIND="$ZSH_THEME_GIT_PROMPT_BEHIND" \
         -v AHEAD="$ZSH_THEME_GIT_PROMPT_AHEAD" \
+        -v ACTION="$ZSH_THEME_GIT_PROMPT_ACTION" \
+        -v ACTION_PREFIX="$ZSH_THEME_GIT_PROMPT_ACTION_PREFIX" \
+        -v ACTION_SUFFIX="$ZSH_THEME_GIT_PROMPT_ACTION_SUFFIX" \
         -v UNMERGED="$ZSH_THEME_GIT_PROMPT_UNMERGED" \
         -v STAGED="$ZSH_THEME_GIT_PROMPT_STAGED" \
         -v UNSTAGED="$ZSH_THEME_GIT_PROMPT_UNSTAGED" \
@@ -138,6 +161,14 @@ function _zsh_git_prompt_git_status() {
                 behind = $4;
             }
 
+            $2 == "tree.status" {
+                status = $3
+            }
+
+            $2 == "git.action" {
+                action = $3
+            }
+
             $1 == "?" {
                 ++untracked;
             }
@@ -165,83 +196,142 @@ function _zsh_git_prompt_git_status() {
                     exit(1);
                 }
 
-                print PREFIX;
                 print RC;
 
                 if (head == "(detached)") {
+                    print DETACHED_PREFIX;
+                    print RC;
+
                     print DETACHED;
                     print substr(oid, 0, 7);
+                    print RC;
+
+                    print DETACHED_SUFFIX;
                 } else {
+                    print BRANCH_PREFIX;
+                    print RC;
+
                     print BRANCH;
                     gsub("%", "%%", head);
                     print head;
+                    print RC;
+
+                    print BRANCH_SUFFIX;
                 }
+
                 print RC;
 
-                if (upstream == "") {
+                if (staged + unstaged + unmerged + untracked > 0) {
+                    print PREFIX;
+                    print RC;
+
+                    if (unmerged > 0) {
+                        print UNMERGED;
+                        print unmerged;
+                        print RC;
+                    }
+
+                    if (staged > 0) {
+                        print STAGED;
+                        print staged;
+                        print RC;
+                    }
+
+                    if (unstaged > 0) {
+                        print UNSTAGED;
+                        print unstaged;
+                        print RC;
+                    }
+
+                    if (untracked > 0) {
+                        print UNTRACKED;
+                        print untracked;
+                        print RC;
+                    }
+
+                    if (stashed > 0) {
+                        print STASHED;
+                        print stashed;
+                        print RC;
+                    }
+
+                    print SUFFIX;
+                    print RC;
+                }
+
+                if (upstream != "") {
+                    if (UPSTREAM_TYPE == "symbol") {
+                        print UPSTREAM_SYMBOL;
+                    } else if (UPSTREAM_TYPE == "full") {
+                        print UPSTREAM_PREFIX;
+                        print RC;
+
+                        print UPSTREAM;
+                        gsub("%", "%%", upstream);
+                        print upstream;
+                        print RC;
+
+                        print UPSTREAM_SUFFIX;
+                    }
+
+                    print RC;
+
+                    if (ahead > 0 && behind < 0) {
+                        print PREFIX;
+                        print RC;
+
+                        print AHEAD;
+                        printf "%d", ahead;
+                        print RC;
+
+                        print SEPARATOR
+
+                        print BEHIND;
+                        printf "%d", behind * -1;
+                        print RC;
+
+                        print SUFFIX;
+                        print RC;
+                    } else {
+                        if (behind < 0) {
+                            print PREFIX;
+                            print RC;
+
+                            print BEHIND;
+                            printf "%d", behind * -1;
+                            print RC;
+
+                            print SUFFIX;
+                            print RC;
+                        }
+
+                        if (ahead > 0) {
+                            print PREFIX;
+                            print RC;
+
+                            print AHEAD;
+                            printf "%d", ahead;
+                            print RC;
+
+                            print SUFFIX;
+                            print RC;
+                        }
+                    }
+                } else {
                     print UPSTREAM_NO_TRACKING;
-                } else if (UPSTREAM_TYPE == "symbol") {
-                    print UPSTREAM_SYMBOL;
-                } else if (UPSTREAM_TYPE == "full") {
-                    print UPSTREAM_PREFIX;
-                    gsub("%", "%%", upstream);
-                    print upstream;
-                    print UPSTREAM_SUFFIX;
                 }
 
-                print RC;
+                if (action != "") {
+                    print ACTION_PREFIX;
+                    print RC;
 
-                if (behind < 0) {
-                    print BEHIND;
-                    printf "%d", behind * -1;
+                    print ACTION;
+                    print action;
+                    print RC;
+
+                    print ACTION_SUFFIX;
                     print RC;
                 }
-
-                if (ahead > 0) {
-                    print AHEAD;
-                    printf "%d", ahead;
-                    print RC;
-                }
-
-                print SEPARATOR;
-
-                if (unmerged > 0) {
-                    print UNMERGED;
-                    print unmerged;
-                    print RC;
-                }
-
-                if (staged > 0) {
-                    print STAGED;
-                    print staged;
-                    print RC;
-                }
-
-                if (unstaged > 0) {
-                    print UNSTAGED;
-                    print unstaged;
-                    print RC;
-                }
-
-                if (untracked > 0) {
-                    print UNTRACKED;
-                    print untracked;
-                    print RC;
-                }
-
-                if (stashed > 0) {
-                    print STASHED;
-                    print stashed;
-                    print RC;
-                }
-
-                if (unmerged == 0 && staged == 0 && unstaged == 0 && untracked == 0) {
-                    print CLEAN;
-                    print RC;
-                }
-
-                print SUFFIX;
-                print RC;
             }
         '
 }
